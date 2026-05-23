@@ -1,0 +1,65 @@
+# Quran Competition — full stack (PostgreSQL + API + dashboard).
+# Configure via a root `.env` file (copy from `.env.example`).
+# Usage: docker compose up --build
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-quran}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quran}
+      POSTGRES_DB: ${POSTGRES_DB:-quran}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-quran} -d ${POSTGRES_DB:-quran}']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-quran}:${POSTGRES_PASSWORD:-quran}@db:5432/${POSTGRES_DB:-quran}?schema=public
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://localhost:8080}
+      JWT_SECRET: ${JWT_SECRET:-change-me}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-7d}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change-me}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:-}
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/London}
+      WA_SESSION_PATH: /data/wa-session
+      WA_WEB_VERSION: ${WA_WEB_VERSION:-}
+      WA_WEB_VERSION_CACHE_URL: ${WA_WEB_VERSION_CACHE_URL:-}
+      # System Chromium installed in the api image.
+      PUPPETEER_EXECUTABLE_PATH: ${PUPPETEER_EXECUTABLE_PATH:-/usr/bin/chromium}
+    volumes:
+      - wa_session:/data/wa-session
+    ports:
+      - '${API_PORT:-3000}:3000'
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - '${WEB_PORT:-8080}:80'
+
+volumes:
+  pgdata:
+  wa_session:

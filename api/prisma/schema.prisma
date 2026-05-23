@@ -1,0 +1,268 @@
+// Quran Competition — data model
+// PostgreSQL + Prisma. See plan: C:\Users\Hp\.claude\plans\atomic-moseying-thacker.md
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum WeekStatus {
+  COLLECTING // capacity poll open, gathering "how many Juz" votes
+  ALLOCATING // votes in, Juz being allocated / awaiting moderator approval
+  IN_PROGRESS // allocation + completion poll posted, members reading
+  COMPLETED // all done (or deadline passed), summary posted
+}
+
+enum VoteSource {
+  POLL
+  MANUAL
+}
+
+enum CompletionSource {
+  POLL
+  REPLY
+  MANUAL
+}
+
+enum AllocationStatus {
+  PENDING
+  COMPLETED
+}
+
+enum PollKind {
+  CAPACITY
+  COMPLETION
+}
+
+enum OutboxType {
+  CAPACITY_POLL
+  ALLOCATION
+  COMPLETION_POLL
+  REMINDER_MON
+  REMINDER_WED
+  REMINDER_THU
+  SUMMARY
+}
+
+enum OutboxStatus {
+  DRAFT
+  SCHEDULED
+  PENDING_APPROVAL
+  SENT
+  FAILED
+  CANCELLED
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+/// A participant in the WhatsApp group.
+model Member {
+  id          String   @id @default(cuid())
+  displayName String
+  /// WhatsApp id, e.g. "447123456789@c.us". Null for provisional members.
+  whatsappId  String?  @unique
+  /// Newer "linked-device" identifier ("...@lid") used by some groups for votes.
+  lidId       String?  @unique
+  /// Alternative spellings/nicknames used to match names in messages.
+  aliases     String[] @default([])
+  country     String?
+  active      Boolean  @default(true)
+  /// True until a moderator confirms an auto-discovered/provisional member.
+  provisional Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  capacityVotes   CapacityVote[]
+  juzRequests     JuzRequest[]
+  allocations     Allocation[]
+  completionVotes CompletionVote[]
+
+  @@index([active])
+}
+
+/// One weekly completion drive. A new week begins every Friday.
+model Week {
+  id         String     @id @default(cuid())
+  weekNumber Int        @unique
+  startDate  DateTime // the Friday this week starts
+  deadline   DateTime // the following Thursday deadline
+  status     WeekStatus @default(COLLECTING)
+  /// Number of completed Qurans recorded in the summary (computed at close).
+  quranCount Int?
+  notes      String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  capacityVotes   CapacityVote[]
+  juzRequests     JuzRequest[]
+  allocations     Allocation[]
+  completionVotes CompletionVote[]
+  polls           WaPoll[]
+  outbox          OutboxMessage[]
+
+  @@index([status])
+}
+
+/// A member's answer to the "how many Juz can you read" capacity poll.
+model CapacityVote {
+  id        String     @id @default(cuid())
+  weekId    String
+  memberId  String
+  /// Numeric capacity. "5+" is stored as the configured expansion value.
+  juzCount  Int
+  /// Original raw poll label (e.g. "5+") for display/audit.
+  rawLabel  String?
+  source    VoteSource @default(POLL)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  week   Week   @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([weekId, memberId])
+  @@index([weekId])
+}
+
+/// A member's PM'd request for specific Juz (entered by the moderator).
+model JuzRequest {
+  id           String   @id @default(cuid())
+  weekId       String
+  memberId     String
+  /// Specific Juz numbers requested (1..30). Empty = "a group, any contiguous".
+  requestedJuz Int[]    @default([])
+  note         String?
+  createdAt    DateTime @default(now())
+
+  week   Week   @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([weekId, memberId])
+  @@index([weekId])
+}
+
+/// One Juz slot within a Quran for a given week, assigned to a member.
+model Allocation {
+  id           String           @id @default(cuid())
+  weekId       String
+  quranNumber  Int // 1..N Qurans for the week
+  juzNumber    Int // 1..30 within the Quran
+  memberId     String
+  status       AllocationStatus @default(PENDING)
+  completedAt  DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  week   Week   @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  member Member @relation(fields: [memberId], references: [id])
+
+  @@unique([weekId, quranNumber, juzNumber])
+  @@index([weekId])
+  @@index([weekId, memberId])
+}
+
+/// A member's "Yes I completed my Juz" signal for the week.
+model CompletionVote {
+  id          String           @id @default(cuid())
+  weekId      String
+  memberId    String
+  completedAt DateTime         @default(now())
+  source      CompletionSource @default(POLL)
+
+  week   Week   @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([weekId, memberId])
+  @@index([weekId])
+}
+
+/// A WhatsApp poll we posted, used to interpret incoming vote_update events.
+model WaPoll {
+  id          String   @id @default(cuid())
+  weekId      String
+  kind        PollKind
+  /// The serialized WhatsApp message id of the poll (vote.parentMessage.id).
+  waMessageId String   @unique
+  /// Maps each poll option label -> numeric/semantic value.
+  /// CAPACITY: { "1": 1, "5+": 5 }. COMPLETION: { "Yes": 1, "No": 0 }.
+  optionMap   Json
+  createdAt   DateTime @default(now())
+
+  week       Week        @relation(fields: [weekId], references: [id], onDelete: Cascade)
+  voteEvents VoteEvent[]
+
+  @@index([weekId])
+}
+
+/// Raw audit log of every poll vote received (for reconciliation).
+model VoteEvent {
+  id              String   @id @default(cuid())
+  pollId          String
+  voterWid        String
+  /// Array of selected option labels at the time of this event ([] = cleared).
+  selectedOptions Json
+  interactedAt    DateTime
+  processed       Boolean  @default(false)
+  /// Why a vote could not be applied automatically, if applicable.
+  note            String?
+  createdAt       DateTime @default(now())
+
+  poll WaPoll @relation(fields: [pollId], references: [id], onDelete: Cascade)
+
+  @@index([pollId])
+  @@index([voterWid])
+}
+
+/// An outbound WhatsApp message in the weekly cycle (draft/scheduled/sent).
+model OutboxMessage {
+  id              String       @id @default(cuid())
+  weekId          String
+  type            OutboxType
+  status          OutboxStatus @default(DRAFT)
+  content         String // rendered text (polls store the question text)
+  scheduledFor    DateTime?
+  sentAt          DateTime?
+  /// Serialized WhatsApp message id once sent.
+  waMessageId     String?
+  requiresApproval Boolean     @default(false)
+  approvedAt      DateTime?
+  error           String?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  week Week @relation(fields: [weekId], references: [id], onDelete: Cascade)
+
+  @@index([weekId])
+  @@index([status])
+  @@index([scheduledFor])
+}
+
+/// Singleton application settings (always id = "singleton").
+model Setting {
+  id        String   @id @default("singleton")
+  /// Serialized group chat id, e.g. "120363xxxxxxxxxxx@g.us".
+  groupChatId String?
+  timezone  String   @default("Europe/London")
+  /// The country/time deadline table (free text inserted into messages).
+  timesTable String  @default("")
+  /// Per-OutboxType message templates (keyed by OutboxType name).
+  templates Json     @default("{}")
+  /// Per-job cron schedule overrides (keyed by job name).
+  schedule  Json     @default("{}")
+  /// Numeric value used to expand the "5+" capacity option.
+  fivePlusValue Int   @default(5)
+  /// Manual override for the "countries" stat in the summary (null = computed).
+  countriesOverride Int?
+  /// Keywords (lowercased) that count as a completion reply, e.g. ["done"].
+  completionKeywords String[] @default(["done", "completed", "complete"])
+  updatedAt DateTime @updatedAt @default(now())
+}

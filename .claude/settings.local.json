@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:docs.wwebjs.dev)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)",
+      "PowerShell($out = @{}; foreach \\($c in 'node','npm','pnpm','docker','git'\\) { try { $v = & $c --version 2>$null; $out[$c] = $v } catch { $out[$c] = 'NOT FOUND' } }; $out.GetEnumerator\\(\\) | ForEach-Object { \"$\\($_.Key\\): $\\($_.Value\\)\" }; \"docker-compose: \" + \\(try { \\(docker compose version\\) } catch { 'n/a' }\\))",
+      "PowerShell(pnpm install 2>&1)",
+      "PowerShell(pnpm --filter api exec prisma generate 2>&1)",
+      "PowerShell(docker compose up -d db 2>&1)",
+      "Bash(docker compose *)",
+      "Bash(docker pull *)",
+      "Bash(curl -s http://localhost:8080/api/health)",
+      "Bash(curl -s http://localhost:8080)",
+      "PowerShell(pnpm --filter api run build 2>&1)",
+      "Bash(node dist/main.js)"
+    ]
+  }
+}

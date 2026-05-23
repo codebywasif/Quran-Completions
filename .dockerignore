@@ -1,0 +1,14 @@
+# The Docker build context is the repository ROOT, so this is the .dockerignore
+# Docker actually reads (per-package ones are ignored). Crucially this prevents
+# the host's node_modules (Windows pnpm symlinks, broken on Linux) from being
+# copied into the image and clobbering the freshly-installed Linux modules.
+**/node_modules
+**/dist
+**/.wwebjs_auth
+**/.wwebjs_cache
+**/coverage
+**/*.log
+.git
+.env
+*.env.local
+.claude

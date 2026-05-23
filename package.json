@@ -1,0 +1,27 @@
+{
+  "name": "quran-competition",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Automation system for a weekly WhatsApp Quran completion drive",
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev:api": "pnpm --filter api start:dev",
+    "dev:web": "pnpm --filter web dev",
+    "dev": "pnpm --parallel --filter api --filter web run dev",
+    "build": "pnpm --filter api run build && pnpm --filter web run build",
+    "test": "pnpm --filter api run test"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@nestjs/core",
+      "@prisma/client",
+      "@prisma/engines",
+      "esbuild",
+      "prisma",
+      "puppeteer"
+    ]
+  }
+}

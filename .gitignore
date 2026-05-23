@@ -1,0 +1,35 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+web/dist/
+
+# env
+.env
+.env.local
+*.env.local
+
+# WhatsApp session (whatsapp-web.js LocalAuth) — never commit
+.wwebjs_auth/
+.wwebjs_cache/
+wa-session/
+
+# prisma local sqlite (if ever used)
+*.db
+*.db-journal
+
+# logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+Thumbs.db
