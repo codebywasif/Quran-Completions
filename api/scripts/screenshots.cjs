@@ -17,7 +17,7 @@ function loadPuppeteer() {
 }
 const puppeteer = loadPuppeteer();
 
-const BASE = 'http://localhost:8080';
+const BASE = process.env.SCREENSHOT_BASE || `http://localhost:${process.env.WEB_PORT || 8080}`;
 const API = BASE + '/api';
 const OUT = path.resolve(__dirname, '../../docs/screenshots');
 fs.mkdirSync(OUT, { recursive: true });
